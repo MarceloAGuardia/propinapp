@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Propinapp: reparto de propinas de un salón por turnos y períodos.">
+<title>Propinapp</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: mesa de trabajo en dos columnas (día + plantel), debajo el cierre del período como planilla */
+:root {
+  --paper: #EEF2EF;
+  --surface: #FFFFFF;
+  --ink: #14211B;
+  --muted: #5B6B63;
+  --line: #D5DED8;
+  --accent: #1D6A4D;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #DCEBE3;
+  --coin: #B07A12;
+  --coin-soft: #F6EBD3;
+  --danger: #B3362B;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #0E1613; --surface: #15201B; --ink: #E4EDE8; --muted: #91A39A; --line: #283731;
+    --accent: #5CC596; --accent-ink: #0B1611; --accent-soft: #1C3329;
+    --coin: #E0B24C; --coin-soft: #2E2715; --danger: #F07A6E;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #0E1613; --surface: #15201B; --ink: #E4EDE8; --muted: #91A39A; --line: #283731;
+  --accent: #5CC596; --accent-ink: #0B1611; --accent-soft: #1C3329;
+  --coin: #E0B24C; --coin-soft: #2E2715; --danger: #F07A6E;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 64px; display: grid; gap: 28px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h1 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; }
+h2 { font-size: 21px; font-weight: 700; }
+.num, .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.eyebrow { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px 24px; }
+.title-block { display: grid; gap: 4px; }
+.status { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.dot.busy { background: var(--coin); }
+.dot.off { background: var(--muted); }
+.banner { background: var(--coin-soft); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 14px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+
+/* Month KPIs */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.kpi { padding: 14px 18px; display: grid; gap: 2px; }
+.kpi + .kpi { border-left: 1px solid var(--line); }
+.kpi .v { font-family: var(--font-data); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.kpi .v.coin { color: var(--coin); }
+@media (max-width: 720px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .kpi:nth-child(3) { border-left: 0; }
+  .kpi:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
+
+/* Panels */
+.desk { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 880px) { .desk { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 20px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 12px; font-size: 14px; font-weight: 500; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: 6px 8px; }
+.btn.ghost:hover { color: var(--ink); }
+.btn.danger { color: var(--danger); }
+.btn.danger.armed { background: var(--danger); color: var(--surface); border-color: var(--danger); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.icon-btn { width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; }
+
+/* Day panel */
+.datebar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.datebar input[type=date] { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; }
+.day-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; }
+.jar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 20px; align-items: end; background: var(--coin-soft); border-radius: var(--r); padding: 16px; }
+@media (max-width: 520px) { .jar { grid-template-columns: minmax(0, 1fr); } }
+.jar label { display: grid; gap: 6px; }
+.money-input { display: flex; align-items: center; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 0 12px; max-width: 260px; }
+.money-input span { font-family: var(--font-data); color: var(--muted); }
+.money-input input { border: 0; background: transparent; padding: 10px 8px; font-family: var(--font-data); font-size: 22px; font-weight: 600; width: 100%; min-width: 0; outline: none; font-variant-numeric: tabular-nums; }
+.money-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.share-out { text-align: right; display: grid; gap: 2px; }
+.share-out .v { font-family: var(--font-data); font-size: 26px; font-weight: 600; color: var(--coin); font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .share-out { text-align: left; } }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; padding: 6px 12px; font-size: 13px; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
+
+.roll { display: grid; }
+.roll-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(92px, auto); gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.roll-row:first-child { border-top: 0; }
+.roll-row .who { display: grid; min-width: 0; }
+.roll-row .who b { font-weight: 600; overflow-wrap: anywhere; }
+.roll-row .who small { color: var(--muted); font-size: 12.5px; }
+.roll-row.absent .who b { color: var(--muted); }
+.roll-row .amt { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.roll-row.absent .amt { color: var(--muted); }
+@media (max-width: 520px) {
+  .roll-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .roll-row .chips { grid-column: 1 / -1; grid-row: 2; }
+}
+.chips { display: flex; gap: 6px; }
+.chip { min-width: 74px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 4px 10px; font-size: 13px; color: var(--muted); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.chip:disabled { cursor: not-allowed; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+/* Staff panel */
+.add-form { display: flex; gap: 8px; }
+.add-form input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 12px; }
+.staff-list { display: grid; }
+.staff-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.staff-row:first-child { border-top: 0; }
+.staff-row span { overflow-wrap: anywhere; }
+.staff-row .acts { display: flex; gap: 4px; flex-shrink: 0; }
+.pill { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; border-radius: 999px; padding: 1px 8px; background: var(--coin-soft); color: var(--coin); font-weight: 600; margin-left: 6px; white-space: nowrap; }
+.pill.off { background: var(--paper); color: var(--muted); }
+details summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+details[open] summary { margin-bottom: 6px; }
+
+.empty { border: 1px dashed var(--line); border-radius: var(--r); padding: 18px; color: var(--muted); font-size: 14px; }
+
+/* Month */
+.month { display: grid; gap: 16px; }
+.month-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.month-nav { display: flex; align-items: center; gap: 6px; }
+.month-label { font-family: var(--font-display); font-size: 19px; }
+.tips-board { display: grid; gap: 14px; }
+.tips-board h2 { font-size: clamp(22px, 3vw, 28px); }
+.ledger-wrap { max-height: 340px; overflow-y: auto; }
+.ledger thead th { position: sticky; top: 0; z-index: 1; }
+.ledger tbody tr { cursor: pointer; }
+.ledger tbody tr:hover td { background: var(--accent-soft); }
+.ledger tbody tr.sel td { background: var(--coin-soft); }
+.ledger td.who-cell { white-space: normal; min-width: 220px; font-size: 14px; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+thead th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; background: var(--surface); }
+tbody tr:last-child td { border-bottom: 0; }
+tfoot td { border-top: 2px solid var(--line); border-bottom: 0; font-weight: 600; }
+td.r, th.r { text-align: right; }
+td.coin { color: var(--coin); font-weight: 600; }
+
+.grid th, .grid td { padding: 6px 4px; text-align: center; font-family: var(--font-data); font-size: 12px; }
+.grid th:first-child, .grid td:first-child { text-align: left; padding-left: 12px; padding-right: 12px; position: sticky; left: 0; background: var(--surface); font-family: var(--font-body); font-size: 13.5px; z-index: 1; }
+.grid thead th button { border: 0; background: transparent; font: inherit; color: inherit; padding: 2px 4px; border-radius: 6px; min-width: 26px; }
+.grid thead th.rec button { color: var(--ink); font-weight: 600; }
+.grid thead th.sel button { background: var(--accent); color: var(--accent-ink); }
+.grid td.w { color: var(--accent); font-weight: 600; }
+.grid td.x { color: var(--danger); opacity: .7; }
+.grid td.n { color: var(--line); }
+.grid tr.tips td { color: var(--coin); font-size: 11px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.legend b { font-family: var(--font-data); }
+
+/* Período de reparto */
+.side { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; min-width: 0; }
+.period-pick { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.pick-row { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
+.tips-board .pick-title { font-size: 17px; margin-right: 4px; align-self: center; }
+.period-pick .seg button { padding: 7px 14px; font-size: 14px; }
+.period-pick .period-form { grid-template-columns: 150px 190px; }
+@media (max-width: 520px) { .period-pick .seg { display: flex; width: 100%; } .period-pick .seg button { flex: 1; padding: 7px 4px; } .period-pick .period-form { grid-template-columns: minmax(0,1fr) minmax(0,1fr); width: 100%; } }
+.progress { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 18px; display: grid; gap: 10px; }
+.progress .row { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; justify-content: space-between; }
+.progress .big { font-family: var(--font-display); font-size: 17px; font-weight: 700; }
+.bar { display: grid; gap: 3px; }
+.bar button { height: 30px; min-width: 0; padding: 0; border: 0; border-radius: 4px; background: var(--line); color: var(--muted); font: 600 11px var(--font-data); font-variant-numeric: tabular-nums; overflow: hidden; }
+.bar button.done { background: var(--accent); color: var(--accent-ink); }
+.bar button.tip { background: var(--coin); color: var(--surface); }
+.bar button:hover { filter: brightness(1.12); }
+.bar button.today { box-shadow: inset 0 -4px 0 var(--ink); }
+@media (max-width: 600px) { .bar.many { grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)) !important; } .bar.many button { height: 34px; } }
+.bar button.sel { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* Evolución del pozo dentro del Registro del día */
+.growth { display: grid; gap: 6px; }
+.growth table { border-collapse: separate; border-spacing: 0; }
+.growth-wrap { max-height: 240px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.growth table th, .growth table td { padding: 6px 10px; font-size: 13.5px; }
+.growth thead th { position: sticky; top: 0; z-index: 1; font-size: 11px; }
+.growth tbody tr { cursor: pointer; }
+.growth tbody tr:hover td { background: var(--accent-soft); }
+.growth tbody tr.sel td { background: var(--coin-soft); font-weight: 700; }
+.growth td.none { color: var(--muted); }
+@media (max-width: 520px) { .growth table th, .growth table td { padding: 6px 4px; font-size: 11.5px; } .growth table td:first-child, .growth table th:first-child { padding-left: 8px; } .growth thead th { white-space: normal; font-size: 10.5px; } }
+.acc-line { grid-column: 1 / -1; border-top: 1px dashed var(--line); padding-top: 10px; display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: space-between; align-items: baseline; font-size: 14px; }
+.acc-line b { font-family: var(--font-data); font-variant-numeric: tabular-nums; color: var(--coin); font-size: 17px; }
+[hidden] { display: none !important; }
+.period-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+@media (max-width: 400px) { .period-form { grid-template-columns: minmax(0, 1fr); } }
+.period-form label { display: grid; gap: 4px; }
+.period-form input { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 7px 10px; min-width: 0; width: 100%; font-family: var(--font-data); }
+.off-btn { border: 0; background: transparent; font: inherit; color: inherit; padding: 2px 6px; border-radius: 6px; text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.off-btn:hover, .off-btn:focus-visible { background: var(--accent-soft); }
+.off-pop { position: fixed; z-index: 20; max-width: min(320px, calc(100vw - 24px)); max-height: 60vh; overflow-y: auto; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.18); padding: 12px 14px; font-size: 13.5px; line-height: 1.45; }
+.off-pop h4 { margin: 0 0 6px; font-family: var(--font-display); font-size: 15px; }
+.off-pop .sec { margin-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; }
+.off-pop ul { margin: 4px 0 0; padding-left: 18px; }
+.off-pop li { text-transform: none; }
+.roll-row .amt small { display: block; color: var(--muted); font-size: 11.5px; }
+.ledger td.acc { font-weight: 600; }
+
+.toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 8px; font-size: 14px; max-width: calc(100% - 32px); z-index: 10; }
+@media (prefers-reduced-motion: no-preference) { .toast { transition: opacity .2s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="title-block">
+      <h1>Propinapp</h1>
+    </div>
+    <div class="status" id="status"><span class="dot off"></span><span>Conectando…</span></div>
+  </header>
+
+  <section class="tips-board" aria-labelledby="tips-h">
+    <div class="period-pick" aria-labelledby="period-h">
+      <div class="pick-row">
+        <h2 id="period-h" class="pick-title">Período de reparto</h2>
+        <div class="seg" role="group" aria-label="Cómo se arma el período">
+          <button data-ptype="dia" aria-pressed="false">Día</button>
+          <button data-ptype="semana" aria-pressed="false">Semana</button>
+          <button data-ptype="quincena" aria-pressed="true">Quincena</button>
+          <button data-ptype="mes" aria-pressed="false">Mes</button>
+          <button data-ptype="dias" aria-pressed="false">Otro</button>
+        </div>
+        <div class="period-form" id="period-custom" hidden>
+          <label><span class="eyebrow">Cantidad de días</span>
+            <input type="number" id="period-len" min="1" max="120" step="1" inputmode="numeric"></label>
+          <label><span class="eyebrow">Empieza el</span>
+            <input type="date" id="period-start"></label>
+        </div>
+      </div>
+      <p class="muted" id="period-help" style="margin:0;font-size:13.5px"></p>
+    </div>
+    <div class="month-head">
+      <div>
+        <h2 id="tips-h">Propinas del <span id="tips-period"></span></h2>
+      </div>
+      <div class="month-nav">
+        <button class="btn icon-btn" id="prev-period" aria-label="Período anterior">‹</button>
+        <button class="btn" id="this-period">Período actual</button>
+        <button class="btn icon-btn" id="next-period" aria-label="Período siguiente">›</button>
+      </div>
+    </div>
+    <div class="progress" id="progress"></div>
+  </section>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <div class="desk">
+    <section class="panel" aria-labelledby="day-h">
+      <div class="panel-head">
+        <div>
+          <span class="eyebrow" id="day-h">Registro del día</span>
+          <div class="day-title" id="day-title"></div>
+        </div>
+        <div class="datebar">
+          <button class="btn icon-btn" id="prev-day" aria-label="Día anterior">‹</button>
+          <input type="date" id="date-input" aria-label="Elegir fecha">
+          <button class="btn icon-btn" id="next-day" aria-label="Día siguiente">›</button>
+          <button class="btn" id="today-btn">Hoy</button>
+        </div>
+      </div>
+
+      <div class="jar">
+        <label for="tip-input">
+          <span class="eyebrow">Propina ingresada en el día</span>
+          <span class="money-input"><span>$</span><input id="tip-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00"></span>
+        </label>
+        <div class="share-out">
+          <span class="eyebrow" id="share-label">Le toca a cada persona</span>
+          <span class="v" id="share-value">$ 0,00</span>
+          <span class="muted" id="share-detail" style="font-size:13px"></span>
+        </div>
+        <div class="acc-line" id="acc-line"></div>
+      </div>
+
+      <div class="growth" id="growth" hidden>
+        <span class="eyebrow" id="growth-title">Cómo se fue juntando el pozo</span>
+        <div class="growth-wrap" id="growth-wrap"><table id="growth-table"></table></div>
+      </div>
+
+      <div class="quick">
+        <span class="eyebrow">Reparto</span>
+        <div class="seg" role="group" aria-label="Forma de reparto">
+          <button id="mode-persona" aria-pressed="true">Partes iguales</button>
+          <button id="mode-turno" aria-pressed="false">Según turnos</button>
+        </div>
+        <span style="flex:1"></span>
+        <button class="btn ghost" id="clear-day">Borrar registro del día</button>
+      </div>
+
+      <div>
+        <div class="panel-head" style="margin-bottom:4px">
+          <span class="eyebrow">¿Quién trabajó? Marcá los turnos de cada persona</span>
+        </div>
+        <div class="roll" id="roll"></div>
+      </div>
+    </section>
+
+    <div class="side">
+    <section class="panel" aria-labelledby="staff-h">
+      <div class="panel-head">
+        <h2 id="staff-h">Plantel</h2>
+        <span class="muted" id="staff-count" style="font-size:13px"></span>
+      </div>
+      <form class="add-form" id="add-form">
+        <input id="new-name" placeholder="Nombre y apellido" aria-label="Nombre de la persona" maxlength="60" autocomplete="off">
+        <button class="btn primary" type="submit">Agregar</button>
+      </form>
+      <div class="staff-list" id="staff-list"></div>
+      <details id="inactive-wrap" hidden>
+        <summary id="inactive-summary">Dados de baja</summary>
+        <div class="staff-list" id="inactive-list"></div>
+      </details>
+    </section>
+    </div>
+  </div>
+
+  <section class="month" aria-labelledby="month-h">
+    <div class="month-head">
+      <div>
+        <span class="eyebrow" id="close-eyebrow">Cierre del período</span>
+        <h2 id="month-h">Liquidación por persona</h2>
+      </div>
+      <strong class="month-label" id="month-label"></strong>
+    </div>
+    <div class="scroll"><table id="summary"></table></div>
+
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+<div class="off-pop" id="off-pop" role="tooltip" hidden></div>
+
+<script>
+const SHIFTS = [{ k: "M", label: "Mañana" }, { k: "N", label: "Noche" }];
+const SHIFT_KEYS = SHIFTS.map(s => s.k);
+const validShifts = a => (a || []).filter(k => SHIFT_KEYS.includes(k));
+const LS_KEY = "reparto-propinas-v1";
+const S = {
+  staff: new Map(),      // id -> {name, active, createdAt, example?}
+  days: new Map(),       // "YYYY-MM-DD" -> {tip, shifts: {id: ["M","T"]}, example?}
+  config: { mode: "persona" },
+  date: todayStr(),
+  backend: "loading",    // loading | db | local
+  canWrite: true,
+  pending: 0,
+};
+let db = null;
+
+/* ---------- helpers ---------- */
+function todayStr() { const d = new Date(); return ymd(d); }
+function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+function parseYmd(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
+function addDays(s, n) { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); }
+function addMonths(s, n) { const d = parseYmd(s); const day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); d.setDate(Math.min(day, last)); return ymd(d); }
+const fmtN = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = n => "$ " + fmtN.format(Math.round((n || 0) * 100) / 100);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const $ = id => document.getElementById(id);
+function newId() { return "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function parseMoney(v) {
+  let s = String(v).trim().replace(/\s|\$/g, "");
+  if (!s) return 0;
+  // "1.234,56" -> 1234.56 ; "1234.56" -> 1234.56
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  const n = parseFloat(s);
+  return isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0;
+}
+function byName(a, b) { return a[1].name.localeCompare(b[1].name, "es"); }
+
+function dayData(date) { return S.days.get(date) || { tip: 0, shifts: {} }; }
+function isRecorded(d) { return !!d && ((d.tip || 0) > 0 || workers(d).length > 0); }
+function shiftsOf(d, id) { return validShifts(((d && d.shifts) || {})[id]); }
+/* Solo cuentan los turnos de personas que existen en el Plantel (activas o dadas de baja).
+   Si quedó algún turno de una persona eliminada, se ignora y no se lleva parte del pozo. */
+function workers(d) { return Object.keys(d.shifts || {}).filter(id => S.staff.has(id)).map(id => [id, shiftsOf(d, id)]).filter(([, a]) => a.length); }
+/* Parte de cada persona en un día */
+function sharesFor(d) {
+  const w = workers(d), out = {};
+  if (!w.length || !d.tip) return out;
+  if (S.config.mode === "turno") {
+    const total = w.reduce((s, [, a]) => s + a.length, 0);
+    w.forEach(([id, a]) => out[id] = d.tip * a.length / total);
+  } else {
+    w.forEach(([id]) => out[id] = d.tip / w.length);
+  }
+  return out;
+}
+
+/* Reparto de un período: se junta todo el pozo y se divide al final.
+   Cada persona suma una parte por cada día trabajado (Partes iguales)
+   o por cada turno (Según turnos). Con período de 1 día da lo mismo que el reparto diario. */
+function poolFor(dates) {
+  const turno = S.config.mode === "turno";
+  let pot = 0, total = 0; const parts = {}, shares = {};
+  dates.forEach(dt => {
+    const d = S.days.get(dt); if (!d) return;
+    pot += d.tip || 0;
+    workers(d).forEach(([id, a]) => { const n = turno ? a.length : 1; parts[id] = (parts[id] || 0) + n; total += n; });
+  });
+  for (const id in parts) shares[id] = total ? pot * parts[id] / total : 0;
+  return { pot, parts, total, shares, unit: total ? pot / total : 0 };
+}
+
+/* ---------- persistence ---------- */
+const queue = new Map(), inflight = new Set();
+async function write(path, data) {
+  if (S.backend !== "db") return;
+  queue.set(path, data);
+  if (inflight.has(path)) return;
+  inflight.add(path); S.pending++; renderStatus();
+  while (queue.has(path)) {
+    const d = queue.get(path); queue.delete(path);
+    try { d === null ? await db.doc(path).delete() : await db.doc(path).set(d); }
+    catch (e) { handleWriteError(e); }
+  }
+  inflight.delete(path); S.pending--; renderStatus();
+}
+function handleWriteError(e) {
+  if (e && e.code === "invalid_argument" && !S.readOnlyNotified) {
+    S.canWrite = false; S.readOnlyNotified = true;
+    toast("No tenés permiso para modificar estos datos. La planilla queda en modo lectura.");
+    render();
+  } else if (e && e.code === "quota_exceeded") {
+    toast("Se llenó el espacio de la planilla. Borrá días viejos para seguir cargando.");
+  } else {
+    toast("No se pudo guardar el último cambio. Revisá la conexión y volvé a intentarlo.");
+  }
+}
+function saveLocal() {
+  if (S.backend !== "local") return;
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify({
+      staff: Object.fromEntries(S.staff), days: Object.fromEntries(S.days), config: S.config,
+    }));
+  } catch (e) {}
+}
+function putDay(date, d) {
+  if (isRecorded(d)) { S.days.set(date, d); write("days/" + date, d); }
+  else { S.days.delete(date); write("days/" + date, null); }
+  saveLocal();
+}
+function putStaff(id, s) {
+  if (s) S.staff.set(id, s); else S.staff.delete(id);
+  write("staff/" + id, s);
+  saveLocal();
+}
+function putConfig(c) { S.config = c; write("config/main", c); saveLocal(); }
+
+/* ---------- actions ---------- */
+function toggleShift(id, k) {
+  if (!S.canWrite) return;
+  const cur = dayData(S.date);
+  const shifts = { ...cur.shifts };
+  const set = new Set(validShifts(shifts[id]));
+  set.has(k) ? set.delete(k) : set.add(k);
+  const list = SHIFT_KEYS.filter(x => set.has(x));
+  if (list.length) shifts[id] = list; else delete shifts[id];
+  putDay(S.date, { ...cur, shifts });
+  render();
+}
+function setAll(k) {
+  if (!S.canWrite) return;
+  const cur = dayData(S.date), shifts = { ...cur.shifts };
+  [...S.staff].filter(([, s]) => s.active).forEach(([id]) => {
+    const set = new Set(validShifts(shifts[id])); set.add(k);
+    shifts[id] = SHIFT_KEYS.filter(x => set.has(x));
+  });
+  putDay(S.date, { ...cur, shifts });
+  render();
+}
+let tipTimer = null;
+function onTipInput() {
+  const tip = parseMoney($("tip-input").value);
+  const cur = dayData(S.date);
+  const next = { ...cur, tip };
+  if (isRecorded(next)) S.days.set(S.date, next); else S.days.delete(S.date);
+  render();
+  clearTimeout(tipTimer);
+  const date = S.date;
+  tipTimer = setTimeout(() => putDay(date, dayData(date)), 600);
+}
+function flushTip() {
+  if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; putDay(S.date, dayData(S.date)); }
+}
+function goTo(date) { flushTip(); S.date = date; render(true); }
+
+/* Botones de dos pasos para acciones destructivas */
+function armed(btn, label, fn) {
+  if (btn.classList.contains("armed")) { fn(); return; }
+  const old = btn.textContent;
+  btn.classList.add("armed"); btn.textContent = label;
+  setTimeout(() => { if (btn.isConnected) { btn.classList.remove("armed"); btn.textContent = old; } }, 3000);
+}
+
+function removePermanently(id) {
+  for (const [date, d] of [...S.days]) {
+    if (d.shifts && d.shifts[id]) {
+      const shifts = { ...d.shifts }; delete shifts[id];
+      putDay(date, { ...d, shifts });
+    }
+  }
+  putStaff(id, null);
+}
+/* Datos de ejemplo para la demo: 6 personas y propinas de los últimos 24 días.
+   No pisa días que ya tengan datos reales. Se borran con "Borrar datos de ejemplo". */
+function loadExamples() {
+  if (!S.canWrite) return;
+  let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const names = ["Lucía Fernández", "Martín Gómez", "Sofía Ruiz", "Diego Torres", "Valentina Sosa", "Tomás Herrera"];
+  const start = addDays(todayStr(), -23);
+  const ids = names.map((name, i) => {
+    const id = "ej" + (i + 1) + Date.now().toString(36);
+    putStaff(id, { name, active: true, createdAt: start, example: true });
+    return id;
+  });
+  for (let i = 0; i < 24; i++) {
+    const date = addDays(start, i);
+    if (isRecorded(S.days.get(date))) continue;
+    const shifts = {};
+    ids.forEach((id, k) => {
+      if ((i + k) % 7 === 0 || rnd() < k * 0.04) return;   // francos: uno por semana y algunos más
+      const r = rnd();
+      shifts[id] = r < 0.45 ? ["M", "N"] : r < 0.75 ? ["M"] : ["N"];
+    });
+    const dow = parseYmd(date).getDay();
+    const base = dow === 5 || dow === 6 ? 160000 : dow === 0 ? 130000 : 80000;
+    const tip = Math.round((base + rnd() * 60000) / 100) * 100;
+    putDay(date, { tip, shifts, example: true });
+  }
+  render(true);
+  toast("Se cargaron datos de ejemplo. Podés borrarlos cuando quieras.");
+}
+function clearExamples() {
+  for (const [id, s] of [...S.staff]) if (s.example) putStaff(id, null);
+  for (const [date, d] of [...S.days]) if (d.example) { S.days.delete(date); write("days/" + date, null); }
+  saveLocal(); render(true);
+  toast("Se borraron los datos de ejemplo.");
+}
+
+/* ---------- render ---------- */
+function renderStatus() {
+  const el = $("status");
+  let cls = "dot", txt;
+  if (S.backend === "loading") { cls += " off"; txt = "Conectando…"; }
+  else if (S.backend === "local") { cls += " off"; txt = "Guardado en este navegador"; }
+  else if (S.pending > 0) { cls += " busy"; txt = "Guardando…"; }
+  else txt = S.canWrite ? "Todo guardado" : "Solo lectura";
+  el.innerHTML = `<span class="${cls}"></span><span>${txt}</span>`;
+}
+
+/* ---------- período de reparto ---------- */
+const DEFAULT_PERIOD = { type: "quincena", length: 15, start: "" };
+function periodCfg() {
+  const p = { ...DEFAULT_PERIOD, ...(S.config.period || {}) };
+  p.length = Math.min(120, Math.max(1, Math.round(+p.length || 15)));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(p.start || "")) p.start = todayStr().slice(0, 8) + "01";
+  return p;
+}
+function dayNum(s) { const [y, m, d] = s.split("-").map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); }
+/* Devuelve inicio y fin (inclusive) del período que contiene la fecha */
+function periodBounds(date) {
+  const p = periodCfg();
+  if (p.type === "dia") return { start: date, end: date };
+  if (p.type === "semana") {
+    const dow = (parseYmd(date).getDay() + 6) % 7; // lunes = 0
+    const start = addDays(date, -dow);
+    return { start, end: addDays(start, 6) };
+  }
+  if (p.type === "mes") {
+    const k = date.slice(0, 7), last = new Date(+k.slice(0, 4), +k.slice(5, 7), 0).getDate();
+    return { start: k + "-01", end: k + "-" + last };
+  }
+  if (p.type === "dias") {
+    const idx = Math.floor((dayNum(date) - dayNum(p.start)) / p.length);
+    const start = addDays(p.start, idx * p.length);
+    return { start, end: addDays(start, p.length - 1) };
+  }
+  const key = date.slice(0, 7), dd = +date.slice(8);
+  const last = new Date(+key.slice(0, 4), +key.slice(5, 7), 0).getDate();
+  return dd <= 15 ? { start: key + "-01", end: key + "-15" } : { start: key + "-16", end: key + "-" + last };
+}
+function fmtRange(a, b) {
+  const da = parseYmd(a), db_ = parseYmd(b);
+  const sameM = a.slice(0, 7) === b.slice(0, 7), sameY = a.slice(0, 4) === b.slice(0, 4);
+  const ma = da.toLocaleDateString("es-AR", { month: "long" }), mb = db_.toLocaleDateString("es-AR", { month: "long" });
+  if (a === b) return `${da.getDate()} de ${mb}`;
+  if (sameM) return `${da.getDate()} al ${db_.getDate()} de ${mb}`;
+  if (sameY) return `${da.getDate()} de ${ma} al ${db_.getDate()} de ${mb}`;
+  return `${da.getDate()} de ${ma} de ${da.getFullYear()} al ${db_.getDate()} de ${mb} de ${db_.getFullYear()}`;
+}
+function periodInfo() {
+  const { start, end } = periodBounds(S.date);
+  const dates = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) dates.push(d);
+  const recorded = dates.filter(dt => isRecorded(S.days.get(dt)));
+  // Todos los días son hábiles (sábados y domingos incluidos).
+  // Cuentan los días ya pasados, y hoy o días futuros si tienen algo cargado.
+  const today = todayStr();
+  const workdays = dates.filter(dt => dt < today || isRecorded(S.days.get(dt)));
+  const elapsed = today < start ? 0 : today > end ? dates.length : dayNum(today) - dayNum(start) + 1;
+  return { start, end, dates, recorded, workdays, today, elapsed, label: fmtRange(start, end) };
+}
+
+function render(syncTip) {
+  renderStatus();
+  const ro = !S.canWrite;
+  const P = periodInfo();
+  const { dates, recorded, workdays } = P;
+  const day = dayData(S.date);
+  const shares = sharesFor(day);
+  const daily = periodCfg().type === "dia";
+  // Pozo del período desde su primer día hasta el día elegido (inclusive)
+  const acc = poolFor(P.dates.filter(dt => dt <= S.date));
+  const unitName = S.config.mode === "turno" ? "turno" : "día trabajado";
+  const active = [...S.staff].filter(([, s]) => s.active).sort(byName);
+  const inactive = [...S.staff].filter(([, s]) => !s.active).sort(byName);
+
+  /* banner */
+  const banner = $("banner");
+  const hasExamples = [...S.staff.values()].some(s => s.example);
+  const msgs = [];
+  if (S.backend === "local") msgs.push(`<span><b>Versión de demostración:</b> los datos se guardan solo en este navegador.${hasExamples ? " Estás viendo <b>datos de ejemplo</b>." : ""}</span>${ro ? "" : hasExamples ? '<button class="btn" id="clear-examples">Borrar datos de ejemplo</button>' : '<button class="btn" id="load-examples">Cargar datos de ejemplo</button>'}`);
+  else if (hasExamples) msgs.push(`<span>La planilla tiene <b>datos de ejemplo</b> para que veas cómo funciona.</span>${ro ? "" : '<button class="btn" id="clear-examples">Borrar datos de ejemplo</button>'}`);
+  banner.innerHTML = msgs.join("");
+  banner.hidden = !msgs.length;
+
+  /* Avance del período + KPIs */
+  const periodTotal = recorded.reduce((s, dt) => s + (S.days.get(dt).tip || 0), 0);
+  const tipDays = recorded.filter(dt => S.days.get(dt).tip > 0);
+  const N = dates.length, left = N - P.elapsed;
+  const closed = P.today > P.end, future = P.today < P.start;
+  const endTxt = parseYmd(P.end).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  const state = daily ? (closed ? "Reparto diario: este día ya está cerrado." : future ? "Este día todavía no llegó." : "Reparto diario: se reparte con el cierre de hoy.")
+    : closed ? `Período cerrado el ${endTxt}. Este es el total a repartir.`
+    : future ? `Este período todavía no empezó.`
+    : left === 0 ? `Hoy es el último día: el reparto se hace con el cierre de hoy.`
+    : `Se reparte al cierre del ${endTxt} · ${left === 1 ? "falta 1 día" : `faltan ${left} días`}.`;
+  $("tips-period").textContent = P.label;
+  $("progress").innerHTML = `<div class="row"><span class="big">${closed ? "Cerrado" : future ? "Próximo" : daily ? "Hoy" : `Día ${P.elapsed} de ${N}`}</span><span class="muted" style="font-size:13.5px">${state}</span></div>
+    <div class="bar ${N > 12 ? "many" : ""}" role="group" aria-label="Días del período" style="grid-template-columns:repeat(${N},minmax(0,1fr))">${dates.map(dt => {
+      const d = S.days.get(dt);
+      const cls = d && d.tip > 0 ? "tip" : dt <= P.today ? "done" : "";
+      const nice = parseYmd(dt).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+      const info = `${nice}${dt === P.today ? " (hoy)" : ""} · ${d && d.tip ? money(d.tip) : "sin propina cargada"}`;
+      return `<button class="${cls} ${dt === P.today ? "today" : ""} ${dt === S.date ? "sel" : ""}" data-open-day="${dt}" title="${info}" aria-label="Abrir ${info}" ${dt === S.date ? 'aria-current="date"' : ""}>${+dt.slice(8)}</button>`;
+    }).join("")}</div>
+    <div class="legend"><span><b style="color:var(--coin)">■</b> Con propina cargada</span><span><b style="color:var(--accent)">■</b> Pasado sin propina</span><span><b style="color:var(--line)">■</b> Por venir</span><span>Raya debajo: hoy</span><span>Tocá un día para ver y cargar su detalle</span></div>`;
+  /* Day header */
+  const dDate = parseYmd(S.date);
+  const dt0 = dDate.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  $("day-title").textContent = dt0.charAt(0).toUpperCase() + dt0.slice(1);
+  $("date-input").value = S.date;
+  const tipIn = $("tip-input");
+  if (syncTip || document.activeElement !== tipIn) tipIn.value = day.tip ? fmtN.format(day.tip) : "";
+  tipIn.disabled = ro;
+
+  const w = workers(day);
+  const nShifts = w.reduce((s, [, a]) => s + a.length, 0);
+  const modeTurno = S.config.mode === "turno";
+  $("mode-persona").setAttribute("aria-pressed", String(!modeTurno));
+  $("mode-turno").setAttribute("aria-pressed", String(modeTurno));
+  $("mode-persona").disabled = $("mode-turno").disabled = ro;
+  $("clear-day").disabled = ro || !isRecorded(day);
+  const dayIdx = P.dates.indexOf(S.date) + 1;
+  const endShort = parseYmd(P.end).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  if (daily) {
+    $("share-label").textContent = modeTurno ? "Valor de cada turno" : "Le toca a cada persona";
+    $("share-value").textContent = money(modeTurno ? (nShifts && day.tip ? day.tip / nShifts : 0) : (w.length && day.tip ? day.tip / w.length : 0));
+    $("share-detail").textContent = w.length
+      ? `${w.length} ${w.length === 1 ? "persona" : "personas"} · ${nShifts} ${nShifts === 1 ? "turno" : "turnos"} · reparto cerrado`
+      : "Nadie marcado todavía";
+    $("acc-line").hidden = true;
+  } else {
+    $("share-label").textContent = "Pozo acumulado del período";
+    $("share-value").textContent = money(acc.pot);
+    $("share-detail").textContent = `Del ${parseYmd(P.start).getDate()} al ${dDate.getDate()} · día ${dayIdx} de ${P.dates.length}`;
+    $("acc-line").hidden = false;
+    $("acc-line").innerHTML = `<span><span class="eyebrow">Valor por ${unitName} hasta este día</span><br><span class="muted" style="font-size:13px">${acc.total} ${modeTurno ? (acc.total === 1 ? "turno" : "turnos") : (acc.total === 1 ? "día trabajado" : "días trabajados")} en total · el reparto final se hace al cierre del ${endShort}</span></span><b>${money(acc.unit)}</b>`;
+  }
+
+  /* Evolución del pozo: del primer día del período hasta el día elegido */
+  if (daily) $("growth").hidden = true;
+  else {
+    $("growth").hidden = false;
+    $("growth-title").textContent = `Cómo se fue juntando el pozo · del ${parseYmd(P.start).getDate()} al ${dDate.getDate()}`;
+    let run = 0;
+    const rowsG = P.dates.filter(dt => dt <= S.date).map(dt => {
+      const t = (S.days.get(dt) || {}).tip || 0; run += t;
+      const lbl = parseYmd(dt).toLocaleDateString("es-AR", { weekday: "short", day: "numeric" });
+      return `<tr class="${dt === S.date ? "sel" : ""}" data-goto-row="${dt}" tabindex="0"><td style="text-transform:capitalize">${lbl}</td>
+        <td class="r num ${t ? "coin" : "none"}">${t ? "+" + money(t) : "Sin propina"}</td>
+        <td class="r num">${money(run)}</td></tr>`;
+    }).join("");
+    $("growth-table").innerHTML = `<thead><tr><th>Día</th><th class="r">Propina del día</th><th class="r">Pozo acumulado</th></tr></thead><tbody>${rowsG}</tbody>`;
+    const gw = $("growth-wrap"); gw.scrollTop = gw.scrollHeight;
+  }
+
+  /* Roll call */
+  const rollIds = active.slice();
+  inactive.forEach(e => { if (shiftsOf(day, e[0]).length) rollIds.push(e); });
+  const roll = $("roll");
+  if (!rollIds.length) {
+    roll.innerHTML = `<div class="empty">Todavía no hay personas en el plantel. Agregá la primera en el panel <b>Plantel</b> y después marcá sus turnos acá.</div>`;
+  } else {
+    roll.innerHTML = rollIds.map(([id, s]) => {
+      const mine = shiftsOf(day, id);
+      const worked = mine.length > 0;
+      return `<div class="roll-row ${worked ? "" : "absent"}">
+        <div class="who"><b>${esc(s.name)}${s.active ? "" : '<span class="pill off">De baja</span>'}</b><small>${worked ? mine.map(k => SHIFTS.find(x => x.k === k).label).join(" + ") : "No trabajó"}</small></div>
+        <div class="chips">${SHIFTS.map(x => `<button class="chip" data-shift="${x.k}" data-id="${id}" aria-pressed="${mine.includes(x.k)}" ${ro ? "disabled" : ""}>${x.label}</button>`).join("")}</div>
+        <div class="amt">${daily ? (worked ? money(shares[id] || 0) : "—")
+          : (acc.shares[id] ? `${money(acc.shares[id])}<small>lleva · ${acc.parts[id]} ${modeTurno ? (acc.parts[id] === 1 ? "turno" : "turnos") : (acc.parts[id] === 1 ? "día" : "días")}</small>` : "—")}</div>
+      </div>`;
+    }).join("") + (active.length && !ro ? `<div class="quick" style="padding-top:10px;border-top:1px solid var(--line)"><span class="muted" style="font-size:13px">Marcar a todo el plantel en:</span>${SHIFTS.map(x => `<button class="btn ghost" data-all="${x.k}">${x.label}</button>`).join("")}</div>` : "");
+  }
+
+  /* Período de reparto (configuración) */
+  const pc = periodCfg();
+  document.querySelectorAll("[data-ptype]").forEach(b => { b.setAttribute("aria-pressed", String(b.dataset.ptype === pc.type)); b.disabled = ro; });
+  $("period-custom").hidden = pc.type !== "dias";
+  const lenIn = $("period-len"), stIn = $("period-start");
+  if (document.activeElement !== lenIn) lenIn.value = pc.length;
+  if (document.activeElement !== stIn) stIn.value = pc.start;
+  lenIn.disabled = stIn.disabled = ro;
+  const fecha = parseYmd(pc.start).toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" });
+  const help = {
+    dia: "Cada día se reparte por separado y queda cerrado ese mismo día.",
+    semana: "Se reparte una vez por semana, de lunes a domingo.",
+    quincena: "Se reparte dos veces por mes: del 1 al 15 y del 16 al último día.",
+    mes: "Se reparte una vez por mes, del 1 al último día.",
+    dias: `Se reparte cada <b>${pc.length} ${pc.length === 1 ? "día" : "días"}</b>, contando desde el ${fecha}.`,
+  }[pc.type];
+  const how = S.config.mode === "turno"
+    ? "Cada turno trabajado suma una parte del pozo."
+    : "Cada día trabajado suma una parte del pozo.";
+  $("period-help").innerHTML = help + (pc.type === "dia" ? "" : ` Las propinas de cada día se van sumando en un pozo, y al cierre se divide: ${how.toLowerCase()}`);
+
+  /* Staff panel */
+  $("staff-count").textContent = `${active.length} ${active.length === 1 ? "activa" : "activas"}`;
+  $("new-name").disabled = ro;
+  $("add-form").querySelector("button").disabled = ro;
+  $("staff-list").innerHTML = active.length ? active.map(([id, s]) =>
+    `<div class="staff-row"><span>${esc(s.name)}${s.example ? '<span class="pill">Ejemplo</span>' : ""}</span>
+      <span class="acts">${ro ? "" : `<button class="btn ghost" data-off="${id}">Quitar</button>`}</span></div>`).join("")
+    : `<div class="empty">Sin personas activas.</div>`;
+  $("inactive-wrap").hidden = !inactive.length;
+  $("inactive-summary").textContent = `Dados de baja (${inactive.length})`;
+  $("inactive-list").innerHTML = inactive.map(([id, s]) =>
+    `<div class="staff-row"><span class="muted">${esc(s.name)}</span>
+      <span class="acts">${ro ? "" : `<button class="btn ghost" data-on="${id}">Reincorporar</button><button class="btn ghost danger" data-del="${id}">Eliminar</button>`}</span></div>`).join("");
+
+  /* Month summary */
+  $("month-label").textContent = P.label;
+  $("close-eyebrow").textContent = closed ? "Cierre del período" : future ? "Período por venir" : "Período en curso · parcial hasta hoy";
+  const pool = poolFor(recorded);
+  const monthShares = pool.shares;
+  const people = [...S.staff].filter(([id, s]) => s.active || recorded.some(dt => shiftsOf(S.days.get(dt), id).length)).sort(byName);
+  offInfo.clear();
+  // Fecha desde la que se cuentan los días sin trabajar: el alta, o el primer turno marcado si es anterior
+  const firstShift = {};
+  [...S.days.keys()].sort().forEach(dt => workers(S.days.get(dt)).forEach(([id]) => { if (!firstShift[id]) firstShift[id] = dt; }));
+  const rows = people.map(([id, s]) => {
+    const since = [s.createdAt, firstShift[id]].filter(Boolean).sort()[0];
+    const cnt = { M: 0, N: 0 }; let worked = 0, notWorked = 0;
+    const offDays = [], halfDays = [];
+    workdays.forEach(dt => {
+      const a = shiftsOf(S.days.get(dt), id);
+      if (a.length) {
+        worked++; a.forEach(k => cnt[k]++);
+        if (a.length < SHIFT_KEYS.length) halfDays.push([dt, a]);
+      }
+      else if (!since || dt >= since) { notWorked++; offDays.push(dt); }
+    });
+    offInfo.set(id, { name: s.name, offDays, halfDays });
+    return { id, s, cnt, worked, notWorked, total: monthShares[id] || 0 };
+  });
+  const sumTotal = rows.reduce((a, r) => a + r.total, 0);
+  const tbl = $("summary");
+  if (!rows.length) {
+    tbl.innerHTML = `<tbody><tr><td class="muted" style="white-space:normal">Cuando agregues personas y registres días, acá vas a ver cuánto le corresponde a cada una en el período.</td></tr></tbody>`;
+  } else {
+    tbl.innerHTML = `<thead><tr><th>Persona</th><th class="r">T. mañana</th><th class="r">T. noche</th><th class="r">Turnos</th><th class="r">Días trabajados</th><th class="r">Días sin trabajar</th><th class="r">${closed ? "Le toca" : "Lleva (parcial)"}</th></tr></thead>
+      <tbody>${rows.map(r => `<tr><td>${esc(r.s.name)}${r.s.active ? "" : '<span class="pill off">De baja</span>'}</td>
+        <td class="r num">${r.cnt.M}</td><td class="r num">${r.cnt.N}</td>
+        <td class="r num">${r.cnt.M + r.cnt.N}</td><td class="r num">${r.worked}</td><td class="r num"><button class="off-btn" data-off-info="${r.id}" aria-label="Ver días sin trabajar de ${esc(r.s.name)}">${r.notWorked}</button></td>
+        <td class="r num coin">${money(r.total)}</td></tr>`).join("")}</tbody>
+      <tfoot><tr><td>Total repartido</td><td colspan="5" class="muted" style="font-weight:400;font-size:13px;white-space:normal">${daily ? "Reparto diario" : `${workdays.length} de ${N} días transcurridos`} · ${pool.total} ${S.config.mode === "turno" ? "turnos" : "días trabajados"} · ${money(pool.unit)} por ${unitName}${Math.abs(sumTotal - periodTotal) > 0.009 ? ` · ${money(periodTotal - sumTotal)} sin repartir: hay propina cargada en días donde nadie del plantel tiene turno marcado` : ""}</td><td class="r num coin">${money(sumTotal)}</td></tr></tfoot>`;
+  }
+}
+
+/* Cartel con los días sin trabajar (francos) y los días de un solo turno */
+const offInfo = new Map();
+function dayLbl(dt) { const t = parseYmd(dt).toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }); return t.charAt(0).toUpperCase() + t.slice(1); }
+function showOffPop(btn) {
+  const info = offInfo.get(btn.dataset.offInfo); if (!info) return;
+  const label = k => SHIFTS.find(x => x.k === k).label;
+  const missing = a => SHIFTS.filter(x => !a.includes(x.k)).map(x => x.label).join(" y ");
+  const pop = $("off-pop");
+  pop.innerHTML = `<h4>${esc(info.name)}</h4>
+    <div class="sec">Días sin trabajar (${info.offDays.length})</div>
+    ${info.offDays.length ? `<ul>${info.offDays.map(dt => `<li>${dayLbl(dt)}: no trabajó Mañana ni Noche</li>`).join("")}</ul>` : `<div class="muted">No tuvo francos en este período.</div>`}
+    ${info.halfDays.length ? `<div class="sec">Días con un solo turno (${info.halfDays.length})</div><ul>${info.halfDays.map(([dt, a]) => `<li>${dayLbl(dt)}: trabajó ${a.map(label).join(" y ")}, no trabajó ${missing(a)}</li>`).join("")}</ul>` : ""}`;
+  pop.hidden = false; offShownAt = Date.now();
+  const r = btn.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = Math.min(Math.max(12, r.right - pw), innerWidth - pw - 12);
+  let top = r.bottom + 6; if (top + ph > innerHeight - 12) top = Math.max(12, r.top - ph - 6);
+  pop.style.left = left + "px"; pop.style.top = top + "px";
+}
+function hideOffPop() { $("off-pop").hidden = true; }
+document.addEventListener("pointerover", e => { if (e.pointerType !== "mouse") return; const b = e.target.closest("[data-off-info]"); if (b) showOffPop(b); else if (!e.target.closest("#off-pop")) hideOffPop(); });
+document.addEventListener("focusin", e => { const b = e.target.closest("[data-off-info]"); if (b) showOffPop(b); });
+document.addEventListener("click", e => { const b = e.target.closest("[data-off-info]"); if (b) { showOffPop(b); return; } if (!e.target.closest("#off-pop")) hideOffPop(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") hideOffPop(); });
+let offShownAt = 0;
+addEventListener("scroll", () => { if (Date.now() - offShownAt > 400) hideOffPop(); }, { passive: true });
+
+let toastTimer;
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 4500);
+}
+
+/* ---------- events ---------- */
+$("prev-day").onclick = () => goTo(addDays(S.date, -1));
+$("next-day").onclick = () => goTo(addDays(S.date, 1));
+$("today-btn").onclick = () => goTo(todayStr());
+$("date-input").onchange = e => { if (e.target.value) goTo(e.target.value); };
+$("prev-period").onclick = () => goTo(periodBounds(addDays(periodBounds(S.date).start, -1)).start);
+$("next-period").onclick = () => goTo(addDays(periodBounds(S.date).end, 1));
+$("this-period").onclick = () => goTo(todayStr());
+function setPeriod(patch) {
+  if (!S.canWrite) return;
+  const cur = periodCfg();
+  putConfig({ ...S.config, period: { type: cur.type, length: cur.length, start: cur.start, ...patch } });
+  render();
+}
+document.querySelectorAll("[data-ptype]").forEach(b => b.onclick = () => {
+  const t = b.dataset.ptype, cur = periodCfg();
+  // Al elegir "Otro", arranca en el inicio del período que se está viendo
+  setPeriod(t === "dias" && cur.type !== "dias" ? { type: t, start: periodBounds(S.date).start } : { type: t });
+});
+$("period-len").addEventListener("change", e => {
+  const n = Math.round(+e.target.value);
+  if (!(n >= 1 && n <= 120)) { toast("Elegí entre 1 y 120 días."); render(); return; }
+  setPeriod({ length: n });
+});
+$("period-start").addEventListener("change", e => { if (e.target.value) setPeriod({ start: e.target.value }); });
+$("tip-input").addEventListener("input", onTipInput);
+$("growth-table").addEventListener("click", e => { const tr = e.target.closest("tr[data-goto-row]"); if (tr) goTo(tr.dataset.gotoRow); });
+$("growth-table").addEventListener("keydown", e => { const tr = e.target.closest("tr[data-goto-row]"); if (tr && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); goTo(tr.dataset.gotoRow); } });
+$("tip-input").addEventListener("blur", () => { flushTip(); render(true); });
+$("mode-persona").onclick = () => { if (S.canWrite) { putConfig({ ...S.config, mode: "persona" }); render(); } };
+$("mode-turno").onclick = () => { if (S.canWrite) { putConfig({ ...S.config, mode: "turno" }); render(); } };
+$("clear-day").onclick = e => armed(e.currentTarget, "¿Borrar? Tocá de nuevo", () => { clearTimeout(tipTimer); tipTimer = null; putDay(S.date, { tip: 0, shifts: {} }); render(true); toast("Se borró el registro del día."); });
+$("add-form").addEventListener("submit", e => {
+  e.preventDefault();
+  if (!S.canWrite) return;
+  const name = $("new-name").value.trim().replace(/\s+/g, " ");
+  if (!name) { toast("Escribí el nombre de la persona."); return; }
+  const dup = [...S.staff].find(([, s]) => s.name.toLowerCase() === name.toLowerCase());
+  if (dup) {
+    if (!dup[1].active) { putStaff(dup[0], { ...dup[1], active: true }); toast(`${name} volvió al plantel.`); }
+    else toast(`${name} ya está en el plantel.`);
+  } else {
+    putStaff(newId(), { name, active: true, createdAt: todayStr() });
+    toast(`${name} se sumó al plantel.`);
+  }
+  $("new-name").value = "";
+  render();
+});
+document.addEventListener("click", e => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.shift) toggleShift(b.dataset.id, b.dataset.shift);
+  else if (b.dataset.all) setAll(b.dataset.all);
+  else if (b.dataset.openDay) {
+    goTo(b.dataset.openDay);
+    const reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    document.querySelector('[aria-labelledby="day-h"]').scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  }
+  else if (b.dataset.goto) goTo(b.dataset.goto);
+  else if (b.dataset.off) { const s = S.staff.get(b.dataset.off); putStaff(b.dataset.off, { ...s, active: false }); toast(`${s.name} pasó a dados de baja. Su historial se conserva.`); render(); }
+  else if (b.dataset.on) { const s = S.staff.get(b.dataset.on); putStaff(b.dataset.on, { ...s, active: true }); render(); }
+  else if (b.dataset.del) { const id = b.dataset.del; armed(b, "¿Seguro?", () => { const n = S.staff.get(id).name; removePermanently(id); render(); toast(`${n} se eliminó junto con sus turnos.`); }); }
+  else if (b.id === "load-examples") loadExamples();
+  else if (b.id === "clear-examples") armed(b, "¿Borrar? Tocá de nuevo", clearExamples);
+});
+
+/* ---------- boot ---------- */
+render(true);
+(async () => {
+  const use = n => (window.claude && window.claude.use) ? window.claude.use(n).catch(() => null) : Promise.resolve(null);
+  const [dbNs, user] = await Promise.all([use("db"), use("user")]);
+  if (dbNs) {
+    db = dbNs; S.backend = "db";
+    if (user) { const can = await user.can("data.write"); if (can === false) S.canWrite = false; }
+    const onErr = e => { if (e && e.code !== "revoked") toast("Se perdió la conexión con la planilla. Recargá la página."); };
+    db.collection("staff").onSnapshot(snap => {
+      S.staff = new Map(snap.docs.map(d => [d.id, d.data()])); render();
+    }, onErr);
+    db.collection("days").onSnapshot(snap => {
+      const m = new Map(snap.docs.map(d => [d.id, d.data()]));
+      // mantener el valor que se está tipeando hasta que se guarde
+      if (tipTimer && S.days.has(S.date)) m.set(S.date, S.days.get(S.date));
+      S.days = m; render();
+    }, onErr);
+    db.doc("config/main").onSnapshot(snap => {
+      if (snap.exists) S.config = { mode: "persona", ...snap.data() }; render();
+    }, onErr);
+  } else {
+    S.backend = "local";
+    try {
+      const raw = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+      if (raw) {
+        S.staff = new Map(Object.entries(raw.staff || {}));
+        S.days = new Map(Object.entries(raw.days || {}));
+        S.config = { mode: "persona", ...(raw.config || {}) };
+      }
+    } catch (e) {}
+  }
+  render(true);
+})();
+</script>
+</body>
+</html>
